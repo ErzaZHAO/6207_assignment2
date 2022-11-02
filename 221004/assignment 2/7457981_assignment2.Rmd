@@ -1,0 +1,299 @@
+---
+title: "assignment2"
+author: "Erza"
+date: "2022-10-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#### Install the package.
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(pacman)
+library(metafor)
+library(ggpmisc)
+```
+
+```{r}
+p_load(bookdown, tidyverse, ggforce, flextable, latex2exp, png, magick)
+```
+
+#### Provide link to my GitHub Repository
+
+[My GitHub Repository]https://github.com/ErzaZHAO/6207_assignment2.git
+
+## 1-2. Data analysis(generate and merge the summary statistics)
+
+#### Firstly we import the raw data.
+```{r}
+OA_data <-  read_csv("OA_activitydat_20190302_BIOL3207.csv") %>%
+                     select(-1)
+
+```
+#### Change the variable factors into the right form.
+
+```{r}
+
+OA_data <- OA_data %>% mutate(loc = as.factor(loc),species = as.factor(species),
+                                         size = as.factor(size),treatment = as.factor(treatment))
+summary(OA_data)
+```
+
+#### Clean the missing data.
+
+Samples which missed activities were removed, in account of 7.
+```{r}
+OA_data %>% summarise(across(everything(), ~sum(is.na(.))))
+table(OA_data[!complete.cases(OA_data$activity),] %>% select(species,loc))
+OA_data <- OA_data[complete.cases(OA_data$activity),]
+
+OA_data
+```
+
+
+```{r}
+file_name_1 <-  "ocean_meta_data.csv"
+existing_res <- read_csv(file_name_1,show_col_types = FALSE)
+
+summary(existing_res)
+```
+```{r}
+levels(OA_data$treatment)[levels(OA_data$treatment)=="control"] <- "ctrl"
+levels(OA_data$treatment)[levels(OA_data$treatment)=="CO2"] <- "oa" 
+```
+
+#### Generate the appropriate statistics [mean,sd,N]
+```{r}
+OA_station <- OA_data %>% group_by(treatment,species) %>% summarise(mean = mean(activity),sd = sd(activity),n = n(),.groups = "drop") %>% 
+       pivot_wider(names_from = treatment,names_glue = "{treatment}.{.value}",values_from = c(mean,n,sd))
+
+OA_station
+```
+# 3. Merge the combined summary statistics and metadata 
+
+#### Extend supplemental information to each experimental group
+
+```{r}
+OA_information <- read_csv("clark_paper_data.csv",show_col_types = FALSE)
+
+extra_infor<- cbind(tibble(OA_information),OA_station)
+
+extra_infor <- extra_infor %>%rename(Species = species) %>% select(colnames(existing_res))
+rm(list = ls())
+```
+ 
+
+
+
+# 4.Calculate the log response ratio (lnRR) effect size 
+
+*lnRR=lnX1¯X2¯* cannot be calculated when the signs of the two response variables do not fit each other. 
+
+```{r}
+meta_data <- read_csv("ocean_meta_data.csv",show_col_types = FALSE) %>% janitor::clean_names()
+ini_size = nrow(meta_data) 
+```
+
+```{r}
+unique(meta_data$pub_year_if[is.na(as.numeric(meta_data$pub_year_if))])
+unique(meta_data$x2017_if[is.na(as.numeric(meta_data$x2017_if))])
+```
+```{r}
+meta_data[meta_data == "-"] <- NA
+meta_data$cue_stimulus_type[is.na(meta_data$cue_stimulus_type)] <- "None"
+```
+
+```{r}
+meta_data <- meta_data %>% mutate(pub_year_if = as.numeric(pub_year_if), x2017_if = as.numeric(x2017_if),
+                        effect_type = as.factor(effect_type), climate_fish_base = as.factor(climate_fish_base),
+                        env_cue_stimulus = as.factor(env_cue_stimulus), cue_stimulus_type = as.factor(cue_stimulus_type),
+                        species = as.factor(species))
+```
+
+```{r}
+summary(meta_data)
+```
+
+
+```{r}
+
+meta_RR <- metafor::escalc(measure = "ROM", m1i = oa_mean, m2i = ctrl_mean, 
+      sd1i = oa_sd, sd2i = ctrl_sd,n1i = oa_n, n2i = ctrl_n,data =meta_data)
+
+meta_RR
+```
+#5. meta-analytic model fitted to the data that controls for the sampling variance of lnRR. 
+```{r}
+meta_RR[!complete.cases(meta_RR$yi),] %>% select(study,behavioural_metric, ctrl_mean,oa_mean,yi)
+
+```
+
+*lnRR=lnX1¯−MX2¯−M≠X1¯X2¯*
+
+#### Remove NA and mark experiment with change and in "doubtful study" to test the obtained lnRR and VlnRR.
+``` {r}
+doubtful_study <- unique(meta_RR[!complete.cases(meta_RR$yi),]$study)
+meta_RR <- meta_RR %>%  filter(!is.na(yi)) %>% 
+         mutate(measure_change = (study %in% doubtful_study)|grepl("change|Change",behavioural_metric) )
+```
+
+
+#### Distribution of lnRR and VlnRR(yi==lnRR, vi==VlnRR)
+```{r}
+
+meta_RR %>% select(vi,yi) %>% pivot_longer(cols = vi:yi, names_to = "type", values_to = "value") %>%
+      ggplot(aes(x = 1,y = value)) + geom_violin() + facet_wrap(~type, scale = "free") + ggtitle("Distribution of lnRR and VlnRR") + xlab(NULL)
+
+```
+# 6.
+1). Density of InRR and VRR between two measurement methods:
+```{r}
+write_csv(meta_RR,"meta_RR.csv")
+meta_RR %>% mutate(sd_yi = sqrt(vi)) %>% select(yi, sd_yi, measure_change) %>% pivot_longer(cols = c(yi,sd_yi), names_to = "type", values_to = "value") %>% 
+      ggplot(aes(x = value)) + geom_density(aes(color = measure_change)) + facet_wrap(~type, scale = "free") + ggtitle("Density of lnRR and VRR between two measurement methods")
+```
+  In ocean acidification studies, there are experiments with extremely high precision, meaning that the sampling variance of these experiments is very small, and these studies have strong effect sizes. In other groups, the distribution of lnRR was more discrete, and its distribution range gradually decreased with the improvement of accuracy.
+
+2).Measures of heterogeneity in effect size estimates across studies
+
+```{r}
+meta_RR <- meta_RR %>% group_by(study) %>% mutate(exp_id = 1:n()) %>% ungroup()
+```
+```{r}
+MLMA1 <- metafor::rma.mv(yi ~ 1, V = vi, method = "REML", 
+            random = list( ~1|study/cue_stimulus_type/species/exp_id),
+            dfs = "contain", test = "t", data = meta_RR)
+
+summary(MLMA1)
+```
+
+```{r}
+meta_RR <- meta_RR %>% mutate(abs_yi = abs(yi))
+MLMA2 <- metafor::rma.mv(abs_yi ~ 1, V = vi, method = "REML",
+           random = list(~1|study/cue_stimulus_type/species/exp_id),
+            dfs = "contain", test = "t", data = meta_RR)
+MLMA2
+```
+
+#### Calculate the proportion of the sample size to the population.
+```{r}
+meta_RR %>% filter(average_n < quantile(meta_RR$average_n,0.99)) %>% ggplot(aes(x = average_n, y = abs_yi)) + geom_point() + geom_smooth(method = lm) + scale_color_gradientn(colours = topo.colors(10)) + ggtitle("The relationship between sample size and abs(lnRR)") + ylab("abs(log(Response ratio))") + xlab("average sample size of study")
+
+```
+Regions with low sample sizes tend to have higher absolute values of effect sizes and usually also have larger sampling variances. It can be seen that a low sample size will lead to a greater possibility of bias in experimental results, and the reliability is often low.
+
+```{r}
+anti_funnel <- function(data, diff_color){
+    ggplot(data, aes(y = abs_yi, x = vi, color = {{diff_color}})) + geom_point() + geom_smooth(method = lm, formula = y~x) +
+    labs(y = "Absolute ln response ratio(abs(lnRR)）", x = "Sampling Variance of lnRR") +
+    stat_poly_eq(use_label(c("eq","R2", "P"), sep = "*\"; \"*"),
+    formula = y~x , label.x = 8, parse = TRUE) +
+    theme_classic() + ggtitle("Linear fitting of VRR to the absolute value of lnRR")
+}
+
+```
+
+```{r}
+meta_RR %>% filter(vi< quantile(meta_RR$vi,0.95)) %>% anti_funnel(measure_change)
+meta_RR %>% filter(vi < quantile(meta_RR$vi,0.95)) %>% anti_funnel(NULL)
+```
+
+
+
+
+
+The fitting results showed that the mean of the absolute value of effect size was 0.611 (95%CI [0.325, 0.896]), and the slope of annual change was -0.172 (95%CI [-0.258, -0.086]), which was highly significant. The fitting results of influence factor and accuracy were not significant, and the mean of influence factor was 0.021 (95%CI [-0.007,0.049]).
+
+
+# 7. Funnel plot for visually assessing the possibility of publication bias.
+
+### Funnel plot of lnRR and study precision
+Studies with lower precision will be more likely to publish results with more pronounced effects, meaning results with larger effect sizes in absolute terms.
+
+```{r}
+metafor::funnel(x = meta_RR$yi, vi = meta_RR$vi, yaxis = "seinv",
+    digits = 2, level = c(0.1, 0.05, 0.01), shade = c("#e9fbff", "#dcf0ef", "#bac8cc"),ylim = c(0.01,30),xlim = c(-3,3),
+    las = 1, xlab = "Response ratio (RR)", atransf = exp, legend = TRUE, pch =20)
+```
+
+```{r}
+funnel(MLMA1, yilm=c(1:4,by=2),yaxis="seinv",level=c(90.95,99),ylab="Precision(1/SE)",refline=0,cex=0.4)
+funnel(MLMA2, yilm=c(1:4,by=2),yaxis="seinv",level=c(90.95,99),ylab="Precision(1/SE)",refline=0,cex=0.4)
+```
+
+
+```{r}
+
+anti_funnel <- function(data, diff_color){
+    ggplot(meta_RR, aes(y = abs_yi, x = vi, color = {{diff_color}})) + geom_point() + geom_smooth(method = lm, formula = y~x) +
+    labs(y = "abs(lnRR)", x = "Sampling Variance of lnRR") +
+    stat_poly_eq(use_label(c("eq","R2", "P"), sep = "*\"; \"*"),
+    formula = y~x , label.x = 8, parse = TRUE) +
+    theme_classic() + ggtitle("Linear fitting of VRR to the absolute value of lnRR")
+}
+
+meta_RR %>% filter(vi < quantile(meta_RR$vi,0.95)) %>% anti_funnel(NULL)
+meta_RR %>% filter(vi < quantile(meta_RR$vi,0.95)) %>% anti_funnel(measure_change)
+```
+
+# 8-9.Time-lag plot assessing how effect sizes may or may not have changed through time & Formal meta-regression model that includes year.
+
+```{r}
+ggplot(meta_RR,aes(y=yi,x =year_online,size=1/sqrt(vi))) + geom_point() + geom_smooth(method=lm,col="red",show.legend=FALSE)+labs(x="Publication Year", y="Fisher's Z-transformed Correlation coefficient(zr)",size="Pricision(1/SE)"+theme_classic())
+```
+
+
+
+ By performing a meta-analysis of inverse sampling variance $1/V_{lnRR}$ versus lnRR, we found that$1/V_{lnRR}$ as a fixed effect explains well the effect on lnRR with a p-value of 0.02 less than 0.05, an estimated slope of -0.001(95% CI: [-0.002,0].
+```{r}
+MLMR <- rma.mv(yi ~ inverse_vi, V = vi, random = list(~1 | study/exp_id),
+    test = "t", dfs = "contain", data = meta_RR %>% mutate(inverse_vi = 1/vi) %>% filter(inverse_vi <= quantile(inverse_vi, 0.95)))
+MLMR
+```
+The fitting results showed that the mean of the absolute value of effect size  and the slope of annual change were highly significant. The fitting results of influence factor and accuracy were not significant of the mean on influence factor.
+
+# 10. Formal meta-regression model that includes inverse sampling variance.
+```{r}
+MLMI <- rma.mv(yi ~ 1/vi, V = vi,random = list(~1 | study/exp_id),
+    test = "t", dfs = "contain",  data=meta_RR)
+
+MLMI
+```
+#### *Sorry for failing in installing the package "orchaRd". Here are some steps below.*
+library(devtools)
+pacman::p_load(metafor, orchaRd)
+devtools::install_github("daniel1noble/orchaRd", force = TRUE)
+
+
+r2a <- orchaRd::r2_ml(MLMI)
+
+r2a
+
+#11.Discussion of the potential for bias based on the meta-regression results.
+
+    1.From the previous icon results, we can see that for negative LnRR, a large number of small sample studies were conducted in the experiment. Instead, most of these studies had large P-values.
+    
+    However, the effect size was not evenly distributed on both sides of the funnel plot, indicating that when the sampling variance was large, the average effect size would shift, resulting in a negative slope. If the sampling variance of the lnRR is preserved, we will get two very large variance values and a lower slope, which is different from the research hypothesis.
+
+  So we can get Publication bias. Different sampling variances and predicted hypothesis directions may cause the authors not to publish these findings, which could be the right direction instead.
+
+   2.The influence of ocean acidification on fish behavior has been weakened, and lnRR in this region has shown a downward trend in the past decade, with a large number of effect sizes >5 during 2010-2014 and mostly <3 after 2015. The average effect size in the earlier studies was too large, hovering around medium effect sizes between 2012 and 2014, and almost disappearing in recent years.
+
+  This is a methodological bias. Experiments with small sample sizes were more prone to statistical errors, and studies with large sample sizes were more reliable in probability statistics, but the average sample size of the studies was relatively low (less than 30 fish).
+
+
+# 12. Identify any studies contributing to publication bias.
+
+  Take plot in question 8, for example. We already know that the data before 2011 are biased through question 11. Data biases in earlier studies made them unreliable. I choose to delete the data before 2011 (that is, to screen the years after 2011 in the X-axis) to observe the test results. And what we can see is that this linear image has a positive linear relationship.
+```{r}
+IS_meta_RR <- meta_RR%>% filter(year_online>2011)
+ggplot(IS_meta_RR,aes(y=yi,x=year_online,size=sqrt(1/vi)))+geom_point()+geom_smooth(method = lm,col="red",show.legend = FALSE)+labs(x="publication Year",y="Log Response Ratio(lnRR)",size="Precision(1/SE")+theme_classic()
+```
+
+  We suggest that researchers should try to avoid publication bias, reduce the use of assumptions at the beginning of an experiment to determine whether the actual results are in the right direction, and maintain the transparency, data availability, and reproducibility of published studies. In the face of an earlier exaggerated effect, researchers should consider a completely new possibility, rather than dismissing the effect based on old thinking.

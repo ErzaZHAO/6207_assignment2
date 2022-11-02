@@ -1,0 +1,20 @@
+"0","do.call(""<-"",list(paste(sample_ids[1],""_calls"",sep = """"),read_xlsx(file_name,sheet=sample_ids[1])))"
+"2","New names:"
+"0","do.call(""<-"",list(paste(sample_ids[2],""_calls"",sep = """"),read_xlsx(file_name,sheet=sample_ids[2])))"
+"0","do.call(""<-"",list(paste(sample_ids[3],""_calls"",sep = """"),read_xlsx(file_name,sheet=sample_ids[3])))"
+"0","do.call(""<-"",list(paste(sample_ids[4],""_calls"",sep = """"),read_xlsx(file_name,sheet=sample_ids[4])))"
+"0","do.call(""<-"",list(paste(sample_ids[5],""_calls"",sep = """"),read_xlsx(file_name,sheet=sample_ids[5])))"
+"0",""
+"0","glimpse"
+"1","function (x, width = NULL, ...) 
+"
+"1","{
+"
+"1","    UseMethod(""glimpse"")
+"
+"1","}
+"
+"1","<bytecode: 0x7f7dfe752a88>
+"
+"1","<environment: namespace:pillar>
+"

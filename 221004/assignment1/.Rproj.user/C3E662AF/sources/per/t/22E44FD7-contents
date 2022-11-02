@@ -1,0 +1,158 @@
+---
+title: '221004'
+author: "Erza"
+date: "2022-10-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(readr)
+```
+
+
+#1. Import the row data 
+```{r}
+file_name <- "BIOL3207_Assignment1_DataFile.xlsx"
+read_xlsx(file_name)
+```
+
+```{r}
+sample_ids <- excel_sheets(file_name)
+sample_ids
+```
+
+#2. Tidy the data calls
+```{r}
+read_xlsx(file_name,sheet=sample_ids[1])
+read_xlsx(file_name,sheet=sample_ids[2])
+read_xlsx(file_name,sheet=sample_ids[3])
+read_xlsx(file_name,sheet=sample_ids[4])
+read_xlsx(file_name,sheet=sample_ids[5])
+
+paste(sample_ids[1],"_calls",sep = "")
+paste(sample_ids[2],"_calls",sep = "")
+paste(sample_ids[3],"_calls",sep = "")
+paste(sample_ids[4],"_calls",sep = "")
+paste(sample_ids[5],"_calls",sep = "")
+```
+```{r}
+do.call("<-",list(paste(sample_ids[1],"_calls",sep = ""),read_xlsx(file_name,sheet=sample_ids[1])))
+do.call("<-",list(paste(sample_ids[2],"_calls",sep = ""),read_xlsx(file_name,sheet=sample_ids[2])))
+do.call("<-",list(paste(sample_ids[3],"_calls",sep = ""),read_xlsx(file_name,sheet=sample_ids[3])))
+do.call("<-",list(paste(sample_ids[4],"_calls",sep = ""),read_xlsx(file_name,sheet=sample_ids[4])))
+do.call("<-",list(paste(sample_ids[5],"_calls",sep = ""),read_xlsx(file_name,sheet=sample_ids[5])))
+
+glimpse
+```
+```{r}
+add_column(_calls,sample_id = sample_ids[1])
+add_column(_calls,sample_id = sample_ids[2])
+add_column(_calls,sample_id = sample_ids[3])
+add_column(_calls,sample_id = sample_ids[4])
+add_column(_calls,sample_id = sample_ids[5])
+```
+
+```{r}
+calls <- bind_rows(SRR2584863_calls,SRR2584866_calls,SRR2589044_calls, .id="sample_id")
+                   
+str(calls)
+```
+
+#3. Selecting columns and filtering rows
+```{r}
+calls %>% select(sample_id, REF, ALT)
+select(calls, -CHROM)
+filter(calls, sample_id == "SRR2584863")
+```
+
+```{r}
+calls %>% janitor::clean_names()
+```
+
+
+```{r}
+transitions <- filter(calls, (REF == "A" & ALT == "G") | (REF == "G" & ALT == "A") | (REF == "C" & ALT == "T") | (REF == "T" & ALT == "C"))
+n_transitions <- dim(transitions)[1]
+```
+
+
+```{r}
+read.csv()
+```
+
+# mutate
+
+# The split-apply-combine approach
+```{r}
+calls %>% group_by(sample_id) %>% summarise(n = n())
+```
+
+```{r}
+calls %>% mutate(INDEL = (nchar(ALT) != nchar(REF))) %>% group_by(INDEL) %>% summarise(mean = mean(QUAL))
+```
+
+```{r}
+details_file <- "ecoli_variants_details.xlsx"
+sample_ids <- excel_sheets(details_file)
+do.call("<-",list(paste(sample_ids[1],"_details",sep = ""),read_xlsx(details_file,sheet=sample_ids[1])))
+do.call("<-",list(paste(sample_ids[2],"_details",sep = ""),read_xlsx(details_file,sheet=sample_ids[2])))
+do.call("<-",list(paste(sample_ids[3],"_details",sep = ""),read_xlsx(details_file,sheet=sample_ids[3])))
+details <- bind_rows(add_column(SRR2584863_details,sample_id = "SRR2584863"),add_column(SRR2584866_details,sample_id = "SRR2584866"),add_column(SRR2589044_details,sample_id = "SRR2589044"))
+str(details)
+```
+
+```{r}
+variants <- bind_cols(calls,details)
+glimpse(variants)
+```
+
+```{r}
+calls %>% arrange(QUAL) %>% bind_cols(details) %>% select(c(starts_with("POS")))
+```
+
+```{r}
+inner_join(calls %>% arrange(QUAL),details,by=c("POS","sample_id","CHROM")) %>% arrange(sample_id,POS)
+```
+
+```{r}
+all_equal(inner_join(calls %>% arrange(QUAL),details,by=c("POS","sample_id","CHROM")) %>% arrange(sample_id,POS),inner_join(calls,details,by=c("POS","sample_id","CHROM")))
+```
+
+```{r}
+variants <- inner_join(calls,details,by=c("POS","sample_id","CHROM"))
+```
+
+```{r}
+variants %>%
+  group_by(sample_id, CHROM, INDEL) %>%
+  summarise(mean_QUAL = mean(QUAL),sd_QUAL = sd(QUAL)) %>%
+  pivot_wider(names_from = sample_id, values_from = c(mean_QUAL,sd_QUAL))
+```
+

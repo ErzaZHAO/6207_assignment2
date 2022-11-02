@@ -1,0 +1,5 @@
+"0","ggplot(data = penguins, mapping = aes(x = species, y = body_mass_g)) +"
+"0","   geom_boxplot()"
+"2","Error in ggplot(data = penguins, mapping = aes(x = species, y = body_mass_g)) : 
+  could not find function ""ggplot""
+"

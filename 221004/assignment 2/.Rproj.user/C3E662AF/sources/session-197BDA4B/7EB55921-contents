@@ -1,0 +1,197 @@
+---
+title: 'assignment1 '
+author: "Minjia ZHAO 7457981"
+date: "2022-10-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readr)
+library(patchwork)
+library(metafor)
+```
+
+
+# 1. Import the row data 
+Import the excel file and read each of its sheet.
+```{r}
+file_name <- "BIOL3207_Assignment1_DataFile.xlsx"
+read_xlsx(file_name)
+```
+
+```{r}
+sheets <- excel_sheets(file_name)
+sheets
+```
+
+```{r}
+read_xlsx(file_name,sheet=sheets[1])
+read_xlsx(file_name,sheet=sheets[2])
+read_xlsx(file_name,sheet=sheets[3])
+read_xlsx(file_name,sheet=sheets[4])
+read_xlsx(file_name,sheet=sheets[5])
+```
+# 2. Tidy the data name
+
+We rename each sheet to make them tidy and integrate them into a new table containing all sites.Then we rename the column names and convert specifications, year and site, into the factor format.
+
+
+```{r}
+all_sites <- tibble()
+for (Site in 1:length(sheets)){
+   original_name <- paste("FieldSite",Site,sep = "_")
+   call_name <- parse(text = original_name)
+   if (Site == 1)
+      do.call("<-",list(original_name, read_xlsx(file_name,sheet=sheets[Site], skip=8)))
+   else
+      do.call("<-",list(original_name, read_xlsx(file_name,sheet=sheets[Site])))
+   do.call("<-",list(original_name, add_column(eval(call_name),Site)))
+   all_sites <- bind_rows(all_sites, eval(call_name))
+}
+
+glimpse
+```
+
+```{r}
+colnames(all_sites) <- c("range","weight","height","species","year","site")
+all_sites <- all_sites %>% mutate(species = as.factor(species),
+                year = as.factor(year), site = as.factor(site))
+```
+
+# 3. Clean the missing value
+
+Summarize the missing columns. Given that there are only two columns missed, we decided to delete them directly with little impact on the whole data set. Then we make a summary to all the data and find someone contract to the fact, such as weight less than 0, and filter those parts .
+
+```{r}
+summarise(all_sites,across(everything(), ~sum(is.na(.))))
+```
+
+
+```{r}
+all_sites[!complete.cases(all_sites),]
+```
+
+```{r}
+all_sites <- all_sites %>% drop_na()
+```
+
+Then we finish the split-apply-combine approach.
+```{r}
+summary(all_sites) 
+filter(all_sites, weight <= 0)
+```
+
+```{r}
+table(all_sites$year)
+levels(all_sites$species) <- c('A fictus','A mendacium','A mendacium')
+levels(all_sites$year)[11] <- "2017"
+```
+```{r}
+write.csv(all_sites,"./u7457981_Assignment1_DataFile.csv")
+```
+
+
+# 4. Use plots to manage the visualization.
+
+  First we use ggplot to distinguish the difference of their traits between different sites and years. It turns out that the the range of data in "A fictus" did not show significant differences between sites and years. In contrast, in "A mendacium", this variation was shown between sites, while there was no significant difference between years. Regardless of the species, the mean values of the weights were different between sites.No differences in height were evident.
+```{r}
+colour_bar <- function(plot_data,x_axis){
+  ggplot(data = plot_data ,aes(x = x_axis, y = range)) + geom_boxplot()+
+  geom_jitter(alpha=0.4, aes(size = weight, color = height)) + scale_size(range = c(0, 4))+
+  stat_summary(fun = median, colour = "red", geom = "point") + facet_wrap(~species) 
+    }
+colour_bar(all_sites,with(all_sites,site)) + ggtitle("traits across sites")
+colour_bar(all_sites,with(all_sites,year)) + ggtitle("traits across years")
+```
+```{r}
+mean_weight <- all_sites %>% select(weight,species,year,site) %>% 
+      group_by(species,year,site) %>% summarise(weight = mean(weight),.groups = "drop")
+all_sites %>% ggplot(aes(x = year, y = weight))+ geom_violin(fill = "light blue") +geom_line(data = mean_weight, aes(group = site,colour = site)) + facet_wrap(~species,nrow =  2)  + ggtitle("weight across years and sites")
+```
+
+Then we use ggplot to help analyze the distribution of value in different variables, comparing with each other and find the relationship. Clearly the distribution of weight didn't show difference between species and the minimum range of height may show a little variation: "A fictus" has higher minimum height. 
+```{r}
+species_trait <- all_sites %>% pivot_longer(cols = c(range,height,weight), names_to = "trait", values_to = "value")
+species_trait %>% ggplot(aes(x = species, y = value)) + geom_violin(aes(fill = species)) +  
+   facet_wrap(~trait, scales = "free")+
+   ggtitle("Traits in different species")
+```
+
+```{r}
+all_sites %>% ggplot(aes(x = site,y = height, colour = site))+ geom_boxplot(fill="light blue") +
+        geom_jitter() + facet_grid(species~year) + ggtitle("height across years and sites")
+```
+  And so on to the different characteristics(trait) of different species. The range and weight of "A mendacium" have a linear relationship in each site, opposite with "A fictus".
+```{r}
+  all_sites %>% ggplot(aes(x = range,y = weight, colour = site))+ geom_point() +
+        geom_smooth(method = lm,formula = y~x) + facet_wrap(~species) + ggtitle("weight and range")
+```
+# 5. Communication
+
+
+### *Hypothesis 1:"A mendacium" has differences in the range of different sites.*
+### *Hypothesis 2:  The weight difference between two species is not significant, though obvious between different sites.*
+We will use t-test and ANOVA test to deal with hypothesis 1, and also ANOVA test to hypothesis 2.
+```{r}
+t_test <- species_trait %>% group_by(trait) %>% summarise(broom::tidy(t.test(value~species, data = cur_data())), .groups = "drop") %>% 
+   select(-parameter,-method,-alternative) %>% rename(t_value = statistic, diff_name = estimate, mean1 = estimate1, mean2 = estimate2)
+knitr::kable(t_test,caption = "T-test for different traits")
+```
+
+```{r}
+ANOVA_test_range <- all_sites %>% select(species,year,range,site) %>% group_by(species) %>% 
+    summarise(broom::tidy(aov(range~site + year,data = cur_data())), .groups = "keep")
+knitr::kable(ANOVA_test_range,caption = "ANOVA test for each species between different years")
+```
+
+```{r}
+ANOVA_test_weight <- all_sites %>% select(species,year,weight,site) %>% group_by(species) %>% 
+    summarise(broom::tidy(aov(weight~site + year,data = cur_data())), .groups = "keep")
+knitr::kable(ANOVA_test_weight,caption = "ANOVA test for each species between weight")
+```
+
+# Conclusion: 
+### *1. There are no significant differences between the two species in range.(p value is less than 0.05).There are significant differences in range between different sites in "A mendacium", but similar bewteen different years.*
+
+### *2. Both species show significant differences in weight between different sites.*
+
+Meanwhile, we can use cor-test to figure out the relationship between different traits.
+```{r}
+factors <- c("range","weight","height")
+combination <- crossing(as_tibble(t(combn(factors,2))), species = c('A fictus','A mendacium'))
+autocor <- function(x,y,sub,data){
+   subdata <- data %>% filter(species == sub)
+   broom::tidy(cor.test(subdata[[y]], subdata[[x]]))
+}
+
+cor_test <- combination %>% mutate(cor=pmap(list(V1,V2,species),~autocor(..1,..2,..3,data = all_sites))) %>% 
+    unnest(cor) %>% select(-method,-alternative)
+knitr::kable(cor_test,caption = "Correlation test for two species in each pairs of traits")
+```
+
+### The range of each animals has a negative correlation with its weight in "A mendacium" .
+
+### *Hypothesis 3 ：There is a linear relationship between the range and weight of "A mendacium".*
+
+```{r}
+range_weight_m$residual <- 1:nrow(range_weight_m)
+lmm_m_inter <- rma.mv(weight ~ range*height + site, V = 0, 
+                              random = list(~1|year,
+                                            ~1|residual), 
+ dfs = "contain",test="t", data = range_weight_m)
+model_mixed_metafor <- rma.mv(weight~range + site, V = 0, 
+                              random = list(~1|year,
+                                            ~1|residual), 
+dfs = "contain",test="t", data = range_weight_m)
+lmm_m_inter
+model_mixed_metafor
+
+```
+
+### *Conlusion: 3. Given that both p-values of range and sites are less than 0.001, obviously there is no linear relationship between the weight and the roaming range of  "A mendacium".*
+

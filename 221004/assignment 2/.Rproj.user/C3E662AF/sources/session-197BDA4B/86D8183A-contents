@@ -1,0 +1,33 @@
+---
+title: "assignment2"
+author: "Erza"
+date: "2022-10-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(readr)
+library(patchwork)
+library(metafor)
+```
+
+# 1. Import the row data 
+Import the excel file and read each of its sheet.
+
+```{r}
+file_name <- "OA_activitydat_20190302_BIOL3207.csv"
+read_csv(file_name)
+```
+```{r}
+OA_data <- read_csv(file_name)
+OA_data %>% drop_na()
+```
+
+
+
